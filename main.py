@@ -399,3 +399,189 @@ def remover_ativo():
 
     conexao.close()
 
+def cadastrar_vulnerabilidade():
+    """Associa uma nova vulnerabilidade ao histórico de um ativo existente no SQLite."""
+    print("\n--- CADASTRO DE VULNERABILIDADE (SQLITE) ---")
+    conexao = conectar_banco()
+    cursor = conexao.cursor()
+
+    # 1. Verificar se o ativo alvo existe no banco de dados
+    try:
+        id_ativo = int(input("Digite o ID do ativo que possui a vulnerabilidade: ").strip())
+    except ValueError:
+        print("❌ Erro: O ID do ativo deve ser um número inteiro positivo.")
+        conexao.close()
+        return
+
+    # Consulta para checar a existência do ativo e pegar o hostname/tipo
+    cursor.execute("SELECT hostname, tipo FROM ativos WHERE id = ?;", (id_ativo,))
+    ativo = cursor.fetchone()
+
+    if not ativo:
+        print(f"❌ Erro: Nenhum ativo encontrado com o ID {id_ativo}. Não é possível cadastrar a falha.")
+        conexao.close()
+        return
+
+    hostname, codigo_tipo = ativo
+    try:
+        nome_tipo = TipoAtivo(codigo_tipo).name.capitalize()
+    except ValueError:
+        nome_tipo = "Desconhecido"
+
+    print(f"\n✅ Ativo localizado: {hostname} ({nome_tipo})")
+    print("Insira os dados da falha de segurança abaixo:")
+
+    # 2. Captura e Validação da Descrição
+    descricao = input("Descrição da falha (ex: CVE-2023-38606 ou Brecha no SSH): ").strip()
+    while not descricao:
+        print("❌ A descrição não pode estar vazia.")
+        descricao = input("Descrição da falha: ").strip()
+
+    # 3. Captura e Validação da Categoria
+    categoria = input("Categoria da vulnerabilidade (ex: Injeção de Código, Patch Ausente): ").strip()
+    while not categoria:
+        print("❌ A categoria não pode estar vazia.")
+        categoria = input("Categoria da vulnerabilidade: ").strip()
+
+    # 4. Seleção de Severidade (Tupla de validação)
+    severidades_validas = ("Baixa", "Média", "Alta", "Crítica")
+    print("\nNíveis de Severidade:")
+    for i, sev in enumerate(severidades_validas, 1):
+        print(f"  [{i}] - {sev}")
+
+    while True:
+        try:
+            opcao_sev = int(input("Escolha o número da severidade (1-4): ").strip())
+            if 1 <= opcao_sev <= len(severidades_validas):
+                severidade = severidades_validas[opcao_sev - 1]
+                break
+            print("❌ Opção inválida! Escolha um número de 1 a 4.")
+        except ValueError:
+            print("❌ Erro: Insira um número inteiro positivo.")
+
+    # 5. Seleção de Status Inicial
+    status_validos = ("Aberta", "Em tratamento", "Corrigida", "Aceita")
+    print("\nStatus Inicial da Vulnerabilidade:")
+    for i, st in enumerate(status_validos, 1):
+        print(f"  [{i}] - {st}")
+
+    while True:
+        try:
+            opcao_st = int(input("Escolha o número do status (1-4): ").strip())
+            if 1 <= opcao_st <= len(status_validos):
+                status = status_validos[opcao_st - 1]
+                break
+            print("❌ Opção inválida! Escolha um número de 1 a 4.")
+        except ValueError:
+            print("❌ Erro: Insira um número inteiro positivo.")
+
+    # 6. Inserção Parametrizada na tabela 'vulnerabilidades'
+    try:
+        cursor.execute("""
+                       INSERT INTO vulnerabilidades (ativo_id, descricao, categoria, severidade, status)
+                       VALUES (?, ?, ?, ?, ?);
+                       """, (id_ativo, descricao, categoria, severidade, status))
+
+        conexao.commit()
+        print(f"\n✅ Vulnerabilidade registrada com sucesso e vinculada ao ativo '{hostname}'!")
+    except sqlite3.Error as erro:
+        print(f"❌ Erro ao salvar a vulnerabilidade no banco: {erro}")
+    finally:
+        conexao.close()
+
+
+def visualizar_vulnerabilidades():
+    """Exibe um relatório detalhado de todas as vulnerabilidades de um ativo específico (SQLITE)."""
+    print("\n--- RELATÓRIO DE VULNERABILIDADES POR ATIVO ---")
+    conexao = conectar_banco()
+    cursor = conexao.cursor()
+
+    # 1. Localizar o ativo pelo ID para extrair o cabeçalho do relatório
+    try:
+        id_ativo = int(input("Digite o ID do ativo que deseja consultar: ").strip())
+    except ValueError:
+        print("❌ Erro: O ID deve ser um número inteiro positivo.")
+        conexao.close()
+        return
+
+    # Consulta rápida para verificar se o ativo existe e coletar seus dados
+    cursor.execute("SELECT hostname, setor, responsavel FROM ativos WHERE id = ?;", (id_ativo,))
+    ativo = cursor.fetchone()
+
+    if not ativo:
+        print(f"❌ Nenhum ativo encontrado com o ID {id_ativo}.")
+        conexao.close()
+        return
+
+    hostname, setor, responsavel = ativo
+
+    # Desenha o cabeçalho elegante do relatório
+    print("\n" + "=" * 50)
+    print(f" ATIVO: {hostname} | Setor: {setor}")
+    print(f" Responsável: {responsavel}")
+    print("=" * 50)
+
+    # 2. Buscar as vulnerabilidades vinculadas a este ativo_id
+    cursor.execute("""
+                   SELECT descricao, categoria, severidade, status
+                   FROM vulnerabilidades
+                   WHERE ativo_id = ?;
+                   """, (id_ativo,))
+    lista_vulns = cursor.fetchall()
+
+    # 3. Verificar se o ativo possui registros de falhas
+    if not lista_vulns:
+        print("✅ Excelente! Nenhuma vulnerabilidade registrada para este ativo.")
+        print("=" * 50)
+        conexao.close()
+        return
+
+    print(f"⚠️  Foram encontradas {len(lista_vulns)} vulnerabilidade(s):")
+    print("-" * 50)
+
+    # 4. Percorrer e listar cada vulnerabilidade de forma estruturada
+    for i, vuln in enumerate(lista_vulns, 1):
+        descricao, categoria, severidade, status = vuln
+        print(f" [{i}] Descrição:  {descricao}")
+        print(f"     Categoria:  {categoria}")
+        print(f"     Severidade: {severidade}")
+        print(f"     Status:     {status}")
+        print("-" * 50)
+
+    conexao.close()
+
+
+def main():
+    while True:
+        print("\n=== SISTEMA DE SEGURANÇA SQLITE ===")
+        print("1. Cadastrar Ativo")
+        print("2. Buscar Ativo")
+        print("3. Atualizar Ativo")
+        print("4. Remover Ativo")
+        print("5. Cadastrar Vulnerabilidade")
+        print("6. Visualizar Vulnerabilidade")
+        print("0. Sair")
+
+        opcao = input("Escolha uma opção: ").strip()
+
+        if opcao == "1":
+            cadastrar_ativo()
+        elif opcao == "2":
+            buscar_ativo()
+        elif opcao == "3":
+            atualizar_ativo()
+        elif opcao == "4":
+            remover_ativo()
+        elif opcao == "5":
+            cadastrar_vulnerabilidade()
+        elif opcao == "6":
+            visualizar_vulnerabilidades()
+        elif opcao == "0":
+            print("Saindo...")
+            break
+        else:
+            print("Opção inválida!")
+
+
+if __name__ == "__main__":
+    main()
