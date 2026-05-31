@@ -23,14 +23,13 @@ def inicializar_banco():
     conexao = conectar_banco()
     cursor = conexao.cursor()
 
-    # Criação da tabela de Ativos
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS ativos (
         id INTEGER PRIMARY KEY,
         hostname TEXT NOT NULL,
         responsavel TEXT NOT NULL,
         setor TEXT NOT NULL,
-        tipo INTEGER NOT NULL
+        tipo INTEGER NOT NULL # utilizando o Enum
     );
     """)
 
@@ -59,7 +58,6 @@ def cadastrar_ativo():
     conexao = conectar_banco()
     cursor = conexao.cursor()
 
-    # 1. Validação, Captura e Verificação Imediata do ID
     while True:
         try:
             id_ativo = int(input("Insira o ID do Ativo de TI (apenas números): ").strip())
@@ -67,35 +65,31 @@ def cadastrar_ativo():
                 print("❌ Erro: O ID deve ser um número positivo maior que zero.")
                 continue
 
-            # NOVO: Verifica no banco de dados se o ID já existe antes de continuar
+            # Verifica no banco de dados se o ID já existe antes de continuar
             cursor.execute("SELECT id FROM ativos WHERE id = ?;", (id_ativo,))
             if cursor.fetchone() is not None:
                 print(f"❌ Erro: Já existe um ativo cadastrado com o ID {id_ativo}! Escolha outro.")
-                continue  # Volta para o início do loop pedindo um novo ID
+                continue
 
             break  # ID válido e disponível, sai do loop do ID
         except ValueError:
             print("❌ Erro: Entrada inválida! Digite um número inteiro.")
 
-    # 2. Captura e Validação do Hostname (O usuário só chega aqui se o ID estiver livre!)
     hostname = input("Insira o nome do hostname (ex: srv-web-01): ").strip()
     while not hostname:
         print("❌ O campo Hostname não pode estar vazio.")
         hostname = input("Insira o nome do hostname: ").strip()
 
-    # 3. Captura e Validação do Responsável
     responsavel = input("Digite o nome do responsável pelo ativo: ").strip()
     while not responsavel or not responsavel.replace(" ", "").isalpha():
         print("❌ O campo Responsável deve conter apenas letras e não pode estar vazio.")
         responsavel = input("Digite o nome do responsável: ").strip()
 
-    # 4. Captura e Validação do Setor
     setor = input("Digite o nome do setor (ex: TI, Financeiro): ").strip().capitalize()
     while not setor or not setor.replace(" ", "").isalpha():
         print("❌ O campo Setor deve conter apenas letras e não pode estar vazio.")
         setor = input("Digite o nome do setor: ").strip()
 
-    # 5. Exibição das Categorias vindas do Enum
     print("\nCategorias de Ativos disponíveis:")
     for tipo in TipoAtivo:
         print(f"   [{tipo.value}] - {tipo.name}")
@@ -118,7 +112,7 @@ def cadastrar_ativo():
                        """, (id_ativo, hostname, responsavel, setor, escolha_tipo))
 
         conexao.commit()
-        print(f"\n✅ Ativo '{hostname}' (ID: {id_ativo}) cadastrado e persistido com sucesso no SQLite!")
+        print(f"\n✅ Ativo '{hostname}' (ID: {id_ativo}) cadastrado com sucesso no Banco!")
 
     except sqlite3.IntegrityError:
         print(f"\n❌ Erro de Integridade: O ID {id_ativo} foi ocupado por outra sessão.")
@@ -128,7 +122,7 @@ def cadastrar_ativo():
 
 
 def buscar_ativo():
-    """Central de Consultas: Permite buscar por ID, Hostname ou Listar todos (SQLITE)."""
+    """Permite buscar por ID, Hostname ou Listar todos (SQLITE)."""
     print("\n--- CONSULTA DE ATIVOS ---")
 
     conexao = conectar_banco()
@@ -153,7 +147,6 @@ def buscar_ativo():
             conexao.close()
             return
 
-        # Consulta filtrando pelo ID único
         cursor.execute("SELECT id, hostname, responsavel, setor, tipo FROM ativos WHERE id = ?;", (id_busca,))
         ativo = cursor.fetchone()  # fetchone() traz apenas uma linha (ou None se não achar)
 
@@ -176,7 +169,6 @@ def buscar_ativo():
         if not ativos_encontrados:
             print(f"❌ Nenhum ativo encontrado com o hostname '{hostname_busca}'.")
         elif len(ativos_encontrados) == 1:
-            # Se achou apenas um, exibe o card completo direto
             exibir_card_individual(ativos_encontrados[0])
         else:
             # Se houver hostnames idênticos, exibe uma lista para o usuário diferenciar pelo ID
@@ -219,7 +211,7 @@ def buscar_ativo():
 
 
 def exibir_card_individual(linha_ativo):
-    """Função auxiliar para desenhar o bloco de dados de um único ativo encontrado."""
+    """Função para desenhar o bloco de dados de um único ativo encontrado."""
     id_real, hostname, responsavel, setor, codigo_tipo = linha_ativo
 
     try:
@@ -243,7 +235,6 @@ def atualizar_ativo():
     conexao = conectar_banco()
     cursor = conexao.cursor()
 
-    # 1. Localizar o ativo pelo ID
     try:
         id_atualizar = int(input("Insira o ID do ativo que deseja atualizar: ").strip())
     except ValueError:
@@ -251,7 +242,6 @@ def atualizar_ativo():
         conexao.close()
         return
 
-    # Procura os dados atuais do ativo no banco
     cursor.execute("SELECT hostname, responsavel, setor, tipo FROM ativos WHERE id = ?;", (id_atualizar,))
     ativo = cursor.fetchone()
 
@@ -266,12 +256,10 @@ def atualizar_ativo():
     print(f"\nAtivo localizado! A alterar os dados de: {hostname_atual}")
     print("*(Deixe o campo em branco e clique Enter para MANTER o dado atual)*")
 
-    # 2. Captura o Hostname temporariamente
     novo_hostname = input(f"Hostname antigo: [{hostname_atual}] Insira o novo hostname: ").strip()
     if not novo_hostname:
         novo_hostname = hostname_atual
 
-    # 3. Captura o Responsável temporariamente
     while True:
         novo_resp = input(f"Responsável antigo: [{resp_atual}] Novo Responsável: ").strip()
         if not novo_resp:
@@ -281,7 +269,6 @@ def atualizar_ativo():
             break
         print("❌ Erro: O nome do Responsável deve conter apenas letras.")
 
-    # 4. Captura o Setor temporariamente
     while True:
         novo_setor = input(f"Setor antigo: [{setor_atual}] Novo Setor: ").strip()
         if not novo_setor:
@@ -291,7 +278,6 @@ def atualizar_ativo():
             break
         print("❌ Erro: O nome do Setor deve conter apenas letras.")
 
-    # 5. Exibição do Resumo das Alterações (Antes -> Depois)
     print("\n" + "-" * 40)
     print("⚠️  RESUMO DAS ALTERAÇÕES:")
     print(f"  Hostname:    {hostname_atual} -> {novo_hostname}")
@@ -299,12 +285,11 @@ def atualizar_ativo():
     print(f"  Setor:       {setor_atual} -> {novo_setor}")
     print("-" * 40)
 
-    # 6. Solicita a confirmação do utilizador
     confirmacao = input("Deseja confirmar estas alterações? (S/N): ").strip().upper()
 
     if confirmacao == 'S':
         try:
-            # Executa o comando UPDATE de forma parametrizada (Proteção contra SQL Injection)
+            # Executa o comando UPDATE com marcadores (Proteção contra SQL Injection)
             cursor.execute("""
                            UPDATE ativos
                            SET hostname    = ?,
