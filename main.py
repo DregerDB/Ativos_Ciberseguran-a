@@ -237,3 +237,165 @@ def exibir_card_individual(linha_ativo):
     print(f"Tipo/Categoria: {nome_tipo} (código: {codigo_tipo})")
     print("=" * 35)
 
+def atualizar_ativo():
+    """Permite alterar o hostname, responsável e setor de um ativo no SQLite com confirmação."""
+    print("\n--- ATUALIZAÇÃO DE ATIVO (SQLITE) ---")
+    conexao = conectar_banco()
+    cursor = conexao.cursor()
+
+    # 1. Localizar o ativo pelo ID
+    try:
+        id_atualizar = int(input("Insira o ID do ativo que deseja atualizar: ").strip())
+    except ValueError:
+        print("❌ Erro: O ID deve ser un número inteiro positivo.")
+        conexao.close()
+        return
+
+    # Procura os dados atuais do ativo no banco
+    cursor.execute("SELECT hostname, responsavel, setor, tipo FROM ativos WHERE id = ?;", (id_atualizar,))
+    ativo = cursor.fetchone()
+
+    if not ativo:
+        print(f"❌ Nenhum ativo encontrado com o ID {id_atualizar}.")
+        conexao.close()
+        return
+
+    # Desempacota os dados atuais carregados do banco
+    hostname_atual, resp_atual, setor_atual, tipo_atual = ativo
+
+    print(f"\nAtivo localizado! A alterar os dados de: {hostname_atual}")
+    print("*(Deixe o campo em branco e clique Enter para MANTER o dado atual)*")
+
+    # 2. Captura o Hostname temporariamente
+    novo_hostname = input(f"Hostname antigo: [{hostname_atual}] Insira o novo hostname: ").strip()
+    if not novo_hostname:
+        novo_hostname = hostname_atual
+
+    # 3. Captura o Responsável temporariamente
+    while True:
+        novo_resp = input(f"Responsável antigo: [{resp_atual}] Novo Responsável: ").strip()
+        if not novo_resp:
+            novo_resp = resp_atual
+            break
+        if novo_resp.replace(" ", "").isalpha():
+            break
+        print("❌ Erro: O nome do Responsável deve conter apenas letras.")
+
+    # 4. Captura o Setor temporariamente
+    while True:
+        novo_setor = input(f"Setor antigo: [{setor_atual}] Novo Setor: ").strip()
+        if not novo_setor:
+            novo_setor = setor_atual
+            break
+        if novo_setor.replace(" ", "").isalpha():
+            break
+        print("❌ Erro: O nome do Setor deve conter apenas letras.")
+
+    # 5. Exibição do Resumo das Alterações (Antes -> Depois)
+    print("\n" + "-" * 40)
+    print("⚠️  RESUMO DAS ALTERAÇÕES:")
+    print(f"  Hostname:    {hostname_atual} -> {novo_hostname}")
+    print(f"  Responsável: {resp_atual} -> {novo_resp}")
+    print(f"  Setor:       {setor_atual} -> {novo_setor}")
+    print("-" * 40)
+
+    # 6. Solicita a confirmação do utilizador
+    confirmacao = input("Deseja confirmar estas alterações? (S/N): ").strip().upper()
+
+    if confirmacao == 'S':
+        try:
+            # Executa o comando UPDATE de forma parametrizada (Proteção contra SQL Injection)
+            cursor.execute("""
+                           UPDATE ativos
+                           SET hostname    = ?,
+                               responsavel = ?,
+                               setor       = ?
+                           WHERE id = ?;
+                           """, (novo_hostname, novo_resp, novo_setor, id_atualizar))
+
+            conexao.commit()
+            print(f"\n✅ Dados do ativo ID {id_atualizar} atualizados com sucesso no SQLite!")
+        except sqlite3.Error as erro:
+            print(f"❌ Erro ao atualizar os dados no banco: {erro}")
+    else:
+        print("\n❌ Atualização cancelada. Os dados originais foram mantidos intactos.")
+
+    conexao.close()
+
+
+def remover_ativo():
+    """Permite remover um ou múltiplos ativos do inventário de uma só vez (SQLITE)."""
+    print("\n--- REMOÇÃO DE ATIVOS (EM LOTE) ---")
+    conexao = conectar_banco()
+    cursor = conexao.cursor()
+
+    # 1. Captura da entrada do usuário (Ex: "1, 2, 3")
+    entrada = input("Digite os IDs dos ativos que deseja remover (separe por vírgula): ").strip()
+    if not entrada:
+        print("❌ Erro: Nenhum ID foi digitado.")
+        conexao.close()
+        return
+
+    # Processa a string: separa por vírgula, limpa espaços e converte apenas os números válidos
+    lista_ids = []
+    for parte in entrada.split(","):
+        try:
+            num = int(parte.strip())
+            if num > 0:
+                lista_ids.append(num)
+        except ValueError:
+            # Ignora caso o usuário digite algo inválido entre as vírgulas (Ex: "1, abc, 3")
+            continue
+
+    if not lista_ids:
+        print("❌ Erro: Nenhum ID inteiro positivo válido foi identificado.")
+        conexao.close()
+        return
+
+    # 2. Localizar quais desses ativos realmente existem no banco para mostrar o resumo
+    # Criamos marcadores "?" dinâmicos de acordo com o tamanho da lista (Ex: "?, ?, ?")
+    marcadores = ",".join(["?"] * len(lista_ids))
+
+    cursor.execute(f"SELECT id, hostname, setor FROM ativos WHERE id IN ({marcadores});", lista_ids)
+    ativos_encontrados = cursor.fetchall()
+
+    if not ativos_encontrados:
+        print("❌ Nenhum ativo correspondente aos IDs digitados foi encontrado no banco.")
+        conexao.close()
+        return
+
+    # Atualiza a nossa lista de IDs para conter apenas os que REALMENTE existem (evita alarmes falsos)
+    ids_existentes = [ativo[0] for ativo in ativos_encontrados]
+    marcadores_reais = ",".join(["?"] * len(ids_existentes))
+
+    # Conta o total de vulnerabilidades que serão apagadas em cascata para todos esses ativos juntos
+    cursor.execute(f"SELECT COUNT(*) FROM vulnerabilidades WHERE ativo_id IN ({marcadores_reais});", ids_existentes)
+    total_vulns = cursor.fetchone()[0]
+
+    # 3. Tela de aviso crítico listando o que será apagado
+    print("\n" + "!" * 50)
+    print("⚠️  ATENÇÃO: ESTA AÇÃO NÃO PODE SER DESFEITA!!!!!")
+    print(f" Ativos que serão REMOVIDOS do inventário:")
+    for ativo in ativos_encontrados:
+        print(f"   • ID: {ativo[0]} | Hostname: {ativo[1]:<15} | Setor: {ativo[2]}")
+    print(f"\n Total de vulnerabilidades associadas que serão APAGADAS: {total_vulns}")
+    print("!" * 50)
+
+    # 4. Confirmação explícita
+    confirmacao = input(
+        f"\nTem certeza que deseja remover esses {len(ids_existentes)} ativo(s)? [S/N]: ").strip().upper()
+
+    if confirmacao == "S":
+        try:
+            # Executa o DELETE em lote usando o operador IN
+            cursor.execute(f"DELETE FROM ativos WHERE id IN ({marcadores_reais});", ids_existentes)
+            conexao.commit()
+            print(
+                f"\n✅ Sucesso: {len(ids_existentes)} ativo(s) e suas {total_vulns} vulnerabilidades foram limpos do banco!")
+        except sqlite3.Error as erro:
+            print(f"❌ Erro ao remover os ativos do banco: {erro}")
+    else:
+        print("\n❌ Remoção em lote cancelada. O inventário permaneceu intacto.")
+
+    conexao.close()
+
