@@ -125,3 +125,115 @@ def cadastrar_ativo():
 
     finally:
         conexao.close()
+
+
+def buscar_ativo():
+    """Central de Consultas: Permite buscar por ID, Hostname ou Listar todos (SQLITE)."""
+    print("\n--- CONSULTA DE ATIVOS ---")
+
+    conexao = conectar_banco()
+    cursor = conexao.cursor()
+
+    try:
+        print("Como deseja realizar a consulta?")
+        print("1. Buscar por ID Único")
+        print("2. Buscar por Hostname")
+        print("3. Listar TODOS os ativos cadastrados")
+        opcao_busca = int(input("Escolha uma opção (1-3): ").strip())
+    except ValueError:
+        print("❌ Erro: Digite um número inteiro válido (1, 2 ou 3).")
+        conexao.close()
+        return
+
+    if opcao_busca == 1:
+        try:
+            id_busca = int(input("Insira o ID do ativo de busca: ").strip())
+        except ValueError:
+            print("❌ Erro: O ID deve ser um número inteiro.")
+            conexao.close()
+            return
+
+        # Consulta filtrando pelo ID único
+        cursor.execute("SELECT id, hostname, responsavel, setor, tipo FROM ativos WHERE id = ?;", (id_busca,))
+        ativo = cursor.fetchone()  # fetchone() traz apenas uma linha (ou None se não achar)
+
+        if ativo:
+            exibir_card_individual(ativo)
+        else:
+            print(f"❌ Nenhum ativo encontrado com o ID {id_busca}.")
+
+
+    elif opcao_busca == 2:
+        hostname_busca = input("Insira o nome do hostname: ").strip().lower()
+        if not hostname_busca:
+            print("❌ O campo hostname de busca não pode estar vazio.")
+            conexao.close()
+            return
+        # Buscamos TODOS os ativos com esse nome usando fetchall()
+        cursor.execute("SELECT id, hostname, responsavel, setor, tipo FROM ativos WHERE LOWER(hostname) = ?;",
+                       (hostname_busca,))
+        ativos_encontrados = cursor.fetchall()
+        if not ativos_encontrados:
+            print(f"❌ Nenhum ativo encontrado com o hostname '{hostname_busca}'.")
+        elif len(ativos_encontrados) == 1:
+            # Se achou apenas um, exibe o card completo direto
+            exibir_card_individual(ativos_encontrados[0])
+        else:
+            # Se houver hostnames idênticos, exibe uma lista para o usuário diferenciar pelo ID
+            print(f"\n⚠️  Aviso: Foram encontrados {len(ativos_encontrados)} ativos com o mesmo hostname!")
+            print("Use a busca por ID Único para ver os detalhes de um ativo específico.")
+            print("\n" + "=" * 70)
+            print(f"{'ID':<6} | {'HOSTNAME':<18} | {'RESPONSÁVEL':<20} | {'SETOR':<15}")
+            print("=" * 70)
+            for linha in ativos_encontrados:
+                id_ativo, hostname, responsavel, setor, _ = linha
+                print(f"{id_ativo:<6} | {hostname:<18} | {responsavel:<20} | {setor:<15}")
+            print("=" * 70)
+
+    elif opcao_busca == 3:
+        cursor.execute("SELECT id, hostname, responsavel, setor, tipo FROM ativos ORDER BY id;")
+        ativos = cursor.fetchall()
+
+        if not ativos:
+            print("🛈 O inventário está vazio. Não há ativos cadastrados.")
+            conexao.close()
+            return
+
+        print("\n" + "=" * 85)
+        print(f"{'ID':<6} | {'HOSTNAME':<18} | {'RESPONSÁVEL':<20} | {'SETOR':<15} | {'CATEGORIA':<12}")
+        print("=" * 85)
+
+        for linha in ativos:
+            id_ativo, hostname, responsavel, setor, codigo_tipo = linha
+            try:
+                nome_tipo = TipoAtivo(codigo_tipo).name.capitalize()
+            except ValueError:
+                nome_tipo = "Desconhecido"
+            print(f"{id_ativo:<6} | {hostname:<18} | {responsavel:<20} | {setor:<15} | {nome_tipo:<12}")
+        print("=" * 85)
+
+    else:
+        print("❌ Opção de busca inválida.")
+
+    conexao.close()
+
+
+def exibir_card_individual(linha_ativo):
+    """Função auxiliar para desenhar o bloco de dados de um único ativo encontrado."""
+    id_real, hostname, responsavel, setor, codigo_tipo = linha_ativo
+
+    try:
+        nome_tipo = TipoAtivo(codigo_tipo).name.capitalize()
+    except ValueError:
+        nome_tipo = "Desconhecido"
+
+    print("\n" + "=" * 35)
+    print("\t DADOS DO ATIVO ENCONTRADO \t")
+    print("=" * 35)
+    print(f"ID:           {id_real}")
+    print(f"Hostname:     {hostname}")
+    print(f"Responsável:  {responsavel}")
+    print(f"Setor:        {setor}")
+    print(f"Tipo/Categoria: {nome_tipo} (código: {codigo_tipo})")
+    print("=" * 35)
+
