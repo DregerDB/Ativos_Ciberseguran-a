@@ -114,9 +114,6 @@ def cadastrar_ativo():
         conexao.commit()
         print(f"\n✅ Ativo '{hostname}' (ID: {id_ativo}) cadastrado com sucesso no Banco!")
 
-    except sqlite3.IntegrityError:
-        print(f"\n❌ Erro de Integridade: O ID {id_ativo} foi ocupado por outra sessão.")
-
     finally:
         conexao.close()
 
@@ -236,7 +233,6 @@ def atualizar_ativo():
             id_atualizar = int(input("Insira o ID do ativo que deseja atualizar: ").strip())
         except ValueError:
             print("❌ Erro: O ID deve ser un número inteiro positivo.")
-            conexao.close()
             return
 
         cursor.execute("SELECT hostname, responsavel, setor, tipo FROM ativos WHERE id = ?;", (id_atualizar,))
@@ -244,7 +240,6 @@ def atualizar_ativo():
 
         if not ativo:
             print(f"❌ Nenhum ativo encontrado com o ID {id_atualizar}.")
-            conexao.close()
             return
 
         hostname_atual, resp_atual, setor_atual, tipo_atual = ativo
@@ -304,7 +299,7 @@ def atualizar_ativo():
 
 
 def remover_ativo():
-    """Permite remover um ou múltiplos ativos do inventário de uma só vez (SQLITE)."""
+    """Permite remover um ou múltiplos ativos do inventário de uma só vez."""
     print("\n--- REMOÇÃO DE ATIVOS (EM LOTE) ---")
     conexao = conectar_banco()
     cursor = conexao.cursor()
@@ -315,7 +310,7 @@ def remover_ativo():
             return
 
         lista_ids = []
-        for parte in entrada.split(","):
+        for parte in entrada.split(","): # validação de números
             try:
                 num = int(parte.strip())
                 if num > 0:
@@ -328,7 +323,6 @@ def remover_ativo():
             print("❌ Erro: Nenhum ID inteiro positivo válido foi identificado.")
             return
 
-        # 2. Localizar quais desses ativos realmente existem no banco para mostrar o resumo
         # Criamos marcadores "?" dinâmicos de acordo com o tamanho da lista (Ex: "?, ?, ?")
         marcadores = ",".join(["?"] * len(lista_ids))
 
@@ -339,7 +333,7 @@ def remover_ativo():
             print("❌ Nenhum ativo correspondente aos IDs digitados foi encontrado no banco.")
             return
 
-        # Atualiza a lista de IDs para conter apenas os que REALMENTE existem
+        # Validação de IDs no banco
         ids_existentes = [ativo[0] for ativo in ativos_encontrados]
         marcadores_reais = ",".join(["?"] * len(ids_existentes))
 
@@ -355,12 +349,10 @@ def remover_ativo():
         print(f"\n Total de vulnerabilidades associadas que serão APAGADAS: {total_vulns}")
         print("!" * 50)
 
-        # 4. Confirmação explícita
         confirmacao = input(
             f"\nTem certeza que deseja remover esses {len(ids_existentes)} ativo(s)? [S/N]: ").strip().upper()
 
         if confirmacao == "S":
-                # Executa o DELETE em lote usando o operador IN
             cursor.execute(f"DELETE FROM ativos WHERE id IN ({marcadores_reais});", ids_existentes)
             conexao.commit()
             print(f"\n✅ Sucesso: {len(ids_existentes)} ativo(s) e suas {total_vulns} vulnerabilidades foram limpos do banco!")
@@ -493,7 +485,7 @@ def visualizar_vulnerabilidades():
         print(f"⚠️  Foram encontradas {len(lista_vulns)} vulnerabilidade(s):")
         print("-" * 50)
 
-        # Percorrer e listar cada vulnerabilidade de forma estruturada
+        # Dois desempacotamentos
         for i, vuln in enumerate(lista_vulns, 1):
             descricao, categoria, severidade, status = vuln
             print(f" [{i}] Descrição:  {descricao}")
